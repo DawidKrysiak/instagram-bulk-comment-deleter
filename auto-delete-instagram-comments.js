@@ -1,39 +1,13 @@
 /**
  * Instagram Bulk Comments Deletion Script
  *
- * Purpose:
- * Automates the selection and deletion of comments using Instagram’s
- * current Bloks-based UI and the confirmation React modal.
+ * Extended Version:
+ * Only deletes comments that DO NOT contain a specific string marker.
  *
- * Execution:
- * 1. Open Instagram in a desktop browser.
- * 2. Navigate to the comments activity page:
- *    https://www.instagram.com/your_activity/interactions/comments
- * 3. Open your browser developer console (preferable Chrome).
- * 4. Paste this script and execute it.
+ * Marker example:
+ * "!i!"  → comment will be kept
  *
- * Notes:
- * - Deletions are irreversible.
- * - Instagram allows selecting up to 100 comments per action, but
- *   smaller batches are more reliable.
- * - Recommended batch size is 5–50 to reduce the risk of temporary
- *   action limits or account restrictions.
- *
- * Configuration:
- * - Modify the MAX constant in the script to control how many comments
- *   are deleted per execution.
- * - Adjust delays (CYCLE_DELAY, SELECT_DELAY, ICON_DELAY, DELETE_DELAY)
- *
- *
- * Troubleshooting:
- * - If pasting is blocked, type `allow pasting` in the console and
- *   press Enter, then paste the script again.
- *
- * - To stop repeated execution, set `window.__STOP_IG_BULK_DELETE__ = true` in the console.
- *
- * Disclaimer:
- * Use at your own risk. The author is not responsible for any account restrictions,
- * issues or data loss resulting from the use of this script.
+ * Everything else → deleted
  */
 
 (async function instagramBulkDelete() {
@@ -41,22 +15,19 @@
 
   /**
    * Runtime configuration.
-   * Keep MAX low for reliability.
    */
   const MAX = 10;
+  const KEEP_STRING = "!i!";
+
   const CYCLE_DELAY = 20000;
   const SELECT_DELAY = 1200;
   const ICON_DELAY = 700;
   const DELETE_DELAY = 1500;
 
-  /**
-   * Utility: async sleep helper.
-   */
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   /**
-   * Dispatches pointer events to simulate a real user click.
-   * Required for Bloks UI elements which ignore .click().
+   * Simulates real pointer click (Bloks UI ignores .click())
    */
   function realClick(element) {
     element.scrollIntoView({ block: "center" });
@@ -74,21 +45,22 @@
   }
 
   /**
-   * Locates the "Select" control that enables multi-selection mode.
+   * Find the "Select" button
    */
   function findSelectButton() {
     return [
       ...document.querySelectorAll(
-        'div[data-bloks-name="bk.components.Flexbox"]',
+        'div[data-bloks-name="bk.components.Flexbox"]'
       ),
     ].find((el) => el.innerText?.trim() === "Select");
   }
 
   /**
-   * Activates comment selection mode.
+   * Activate selection mode
    */
   async function activateSelectMode() {
     const selectBtn = findSelectButton();
+
     if (!selectBtn) {
       throw new Error("Select control not found");
     }
@@ -98,27 +70,46 @@
   }
 
   /**
-   * Retrieves selectable comment icons (unchecked radio buttons).
+   * Get unselected comment icons
    */
   function getSelectableIcons() {
     return document.querySelectorAll(
-      'div[data-bloks-name="ig.components.Icon"][style*="circle__outline"]',
+      'div[data-bloks-name="ig.components.Icon"][style*="circle__outline"]'
     );
   }
 
   /**
-   * Selects up to `max` comments.
+   * Extract comment text associated with an icon
+   */
+  function getCommentTextFromIcon(icon) {
+    const row = icon.closest('[data-bloks-name="bk.components.Flexbox"]');
+    if (!row) return "";
+
+    const spans = row.querySelectorAll(
+      'span[data-bloks-name="bk.components.TextSpan"]'
+    );
+
+    return [...spans].map((s) => s.innerText).join(" ");
+  }
+
+  /**
+   * Select comments that DO NOT contain KEEP_STRING
    */
   async function selectComments(max) {
     const icons = getSelectableIcons();
-    if (!icons.length) {
-      return 0;
-    }
+    if (!icons.length) return 0;
 
     let selected = 0;
 
     for (const icon of icons) {
       if (selected >= max) break;
+
+      const commentText = getCommentTextFromIcon(icon);
+
+      if (commentText.includes(KEEP_STRING)) {
+        console.log("Skipping (marker found):", commentText);
+        continue;
+      }
 
       icon.scrollIntoView({ behavior: "smooth", block: "center" });
       await sleep(400);
@@ -127,7 +118,11 @@
       if (!button) continue;
 
       realClick(button);
+
       selected++;
+
+      console.log("Selected for deletion:", commentText);
+
       await sleep(ICON_DELAY);
     }
 
@@ -135,13 +130,12 @@
   }
 
   /**
-   * Locates the Bloks-level Delete control.
-   * The visible text is not clickable; the parent container is.
+   * Locate Bloks delete button
    */
   function findBloksDeleteButton() {
     const deleteText = [
       ...document.querySelectorAll(
-        'span[data-bloks-name="bk.components.TextSpan"]',
+        'span[data-bloks-name="bk.components.TextSpan"]'
       ),
     ].find((span) => span.innerText?.trim() === "Delete");
 
@@ -151,12 +145,13 @@
   }
 
   /**
-   * Triggers the initial delete action in the Bloks UI.
+   * Trigger delete action
    */
   async function clickBloksDelete() {
     await sleep(SELECT_DELAY);
 
     const deleteBtn = findBloksDeleteButton();
+
     if (!deleteBtn) {
       throw new Error("Bloks Delete control not found");
     }
@@ -165,42 +160,46 @@
   }
 
   /**
-   * Locates the confirmation button in the React modal dialog.
+   * Find confirmation modal delete button
    */
   function findModalDeleteButton() {
     return [...document.querySelectorAll("button")].find(
-      (btn) => btn.innerText?.trim() === "Delete",
+      (btn) => btn.innerText?.trim() === "Delete"
     );
   }
 
   /**
-   * Confirms deletion in the modal dialog.
+   * Confirm final deletion
    */
   async function confirmFinalDelete() {
     await sleep(DELETE_DELAY);
 
     const modalDeleteBtn = findModalDeleteButton();
+
     if (!modalDeleteBtn) {
       throw new Error("Final confirmation button not found");
     }
 
     modalDeleteBtn.focus();
+
     await sleep(100);
+
     modalDeleteBtn.click();
   }
 
   /**
-   * Main execution loop.
+   * Main execution loop
    */
   let cycle = 1;
 
   while (!window.__STOP_IG_BULK_DELETE__) {
     try {
       await activateSelectMode();
+
       const deletedCount = await selectComments(MAX);
 
       if (!deletedCount) {
-        console.log("No comments left to delete");
+        console.log("No deletable comments found");
         break;
       }
 
@@ -208,6 +207,7 @@
       await confirmFinalDelete();
 
       console.log(`Cycle ${cycle}: deleted ${deletedCount} comments`);
+
       cycle++;
 
       await sleep(CYCLE_DELAY);
